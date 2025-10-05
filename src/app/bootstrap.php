@@ -32,10 +32,11 @@ $CONFIG = [
     'APP_ENV'    => 'dev',
     'ROUTER_MODE' => 'mirror', // 'mirror' or 'auto'
 
-    'BASE_DIR'   => dirname(__DIR__),            // = src
-    'LIB_DIR'    => dirname(__DIR__) . '/lib',   // = src/lib
-    'CLASS_DIR'  => dirname(__DIR__) . '/class', // = src/class
-    'VAR_DIR'    => dirname(__DIR__) . '/var',   // = src/var
+    'BASE_DIR'   => dirname(__DIR__),                   // = src
+    'PUB_DIR'    => dirname(__DIR__) . '/public_html',  // = src/public_html
+    'LIB_DIR'    => dirname(__DIR__) . '/lib',          // = src/lib
+    'CLASS_DIR'  => dirname(__DIR__) . '/class',        // = src/class
+    'VAR_DIR'    => dirname(__DIR__) . '/var',          // = src/var
 
     'TZ'         => 'Asia/Tokyo',
     'MB_LANG'    => 'Japanese',
@@ -89,7 +90,7 @@ if ($httpsOn) {
 /**
  * オートロード設定
  */
-$classDir = $classDir = realpath($CONFIG['CLASS_DIR']) ?: $CONFIG['CLASS_DIR'];
+$classDir = realpath($CONFIG['CLASS_DIR']) ?: $CONFIG['CLASS_DIR'];
 spl_autoload_register(function (string $className) use ($classDir) {
     if (!preg_match('/^[A-Za-z0-9_\\\\]+$/', $className)) return;
 
@@ -131,11 +132,50 @@ if (PHP_SAPI !== 'cli' && isset($_SERVER['REQUEST_METHOD'])) {
         }
 
         $candidates = [$path . '.php', $path . '/index.php'];
-        $lib = Nukko::config('LIB_DIR');
-        foreach ($candidates as $rel) {
-            $file = $lib . '/' . $rel;
-            if (is_file($file) && Nukko::isUnder($lib, $file)) { include_once $file; return; }
+
+        $lib     = Nukko::config('LIB_DIR');
+        $pub     = Nukko::config('PUB_DIR');
+        $self    = realpath($_SERVER['SCRIPT_FILENAME'] ?? '');
+        $relHit  = null;
+
+        $relSelf = '';
+        if ($self && str_starts_with($self, $pub)) {
+            $relSelf = substr($self, strlen($pub));
         }
+
+        foreach ($candidates as $rel) {
+            // lib側にファイルがある場合は先にinclude
+            $file = $lib . '/' . $rel;
+            if ($relSelf !== '' && $rel === ltrim($relSelf, '/')) {
+                // 自分自身ガード
+                continue;
+            }
+            if (is_file($file) && Nukko::isUnder($lib, $file)) {
+                include_once $file;
+                $relHit = $rel;
+                break;
+            }
+        }
+
+        if ($relHit !== null) {
+            // lib側にファイルがあった場合はpub側は同じ相対パスのものだけを探す
+            $file = $pub . '/' . $relHit;
+            if ($self && realpath($file) === $self) return; // 自分自身ガード
+            if (is_file($file) && Nukko::isUnder($pub, $file)) {
+                include_once $file;
+            }
+            return;
+        } else {
+            // lib が無かった場合は pub 単独で候補探索
+            foreach ($candidates as $rel) {
+                $file = $pub . '/' . $rel;
+                if ($self && realpath($file) === $self) continue;
+                if (is_file($file) && Nukko::isUnder($pub, $file)) {
+                    include_once $file; return;
+                }
+            }
+        }
+
         http_response_code(404);
         header('Content-Type: text/plain; charset=UTF-8');
         echo "404 Not Found"; return;
@@ -143,7 +183,7 @@ if (PHP_SAPI !== 'cli' && isset($_SERVER['REQUEST_METHOD'])) {
     } else {
         // mirrorモード
         $script = $_SERVER['SCRIPT_FILENAME'] ?? '';
-        $base   = realpath(Nukko::config('BASE_DIR') . '/public_html');
+        $base   = realpath(Nukko::config('PUB_DIR'));
         $sReal  = $script ? realpath($script) : false;
         if ($sReal && $base && str_starts_with($sReal, $base)) {
             $rel = substr($sReal, strlen($base));
