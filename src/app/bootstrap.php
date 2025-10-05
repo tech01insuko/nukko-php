@@ -8,7 +8,6 @@
  *
  * src/
  * ├─ app/bootstrap.php   ←このファイル
- * ├─ app/routes.php      ←ルータを使うときだけ
  * ├─ app/.env.php        ←任意設定
  * ├─ class/              ←クラス群（オートロード対象）
  * ├─ lib/                ←ミラーinclude用
@@ -31,9 +30,8 @@ const NUKKO_BOOTSTRAP_LOADED = true;
  */
 $CONFIG = [
     'APP_ENV'    => 'dev',
-    'USE_ROUTER' => false,
+    'ROUTER_MODE' => 'mirror', // 'mirror' or 'auto'
 
-    // bootstrap.php は public_htmlと同階層のapp に置く前提
     'BASE_DIR'   => dirname(__DIR__),            // = src
     'LIB_DIR'    => dirname(__DIR__) . '/lib',   // = src/lib
     'CLASS_DIR'  => dirname(__DIR__) . '/class', // = src/class
@@ -91,7 +89,7 @@ if ($httpsOn) {
 /**
  * オートロード設定
  */
-$classDir = $CONFIG['CLASS_DIR'];
+$classDir = $classDir = realpath($CONFIG['CLASS_DIR']) ?: $CONFIG['CLASS_DIR'];
 spl_autoload_register(function (string $className) use ($classDir) {
     if (!preg_match('/^[A-Za-z0-9_\\\\]+$/', $className)) return;
 
@@ -111,61 +109,39 @@ spl_autoload_register(function (string $className) use ($classDir) {
 Nukko::init($CONFIG);
 
 /**
- * WEBモードの場合はセッション開始とルーティング or ミラーinclude
+ * WEBモードの場合はセッション開始と自動マッピング or ミラーinclude
  */
 if (PHP_SAPI !== 'cli' && isset($_SERVER['REQUEST_METHOD'])) {
     if (session_status() !== PHP_SESSION_ACTIVE) {
         @session_start();
     }
 
-    if (Nukko::config('USE_ROUTER', false)) {
-        // ルータモード
-        $routes = [];
-        $routesFile = __DIR__ . '/routes.php';
-        if (is_file($routesFile)) {
-            $loaded = require $routesFile;
-            if (is_array($loaded)) $routes = $loaded;
-        }
+    $mode = Nukko::config('ROUTER_MODE', 'auto');
 
-        $method = $_SERVER['REQUEST_METHOD'];
-        $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
-        $uri = rtrim($uri, '/') ?: '/';
+    if ($mode === 'auto') {
+        // 自動マッピングモード
+        $raw  = $_GET['path'] ?? parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+        $path = trim($raw, "/ \t\n\r\0\x0B");
+        if ($path === '') $path = 'index';
 
-        $handler = $routes[$method][$uri] ?? null;
-        if ($handler === null) {
-            http_response_code(404);
+        if (!preg_match('#^[A-Za-z0-9_/\-]+$#', $path)) {
+            http_response_code(400);
             header('Content-Type: text/plain; charset=UTF-8');
-            echo "404 Not Found";
-            return;
+            echo "400 Bad Request"; return;
         }
 
-        if (is_callable($handler)) {
-            $handler(); return;
+        $candidates = [$path . '.php', $path . '/index.php'];
+        $lib = Nukko::config('LIB_DIR');
+        foreach ($candidates as $rel) {
+            $file = $lib . '/' . $rel;
+            if (is_file($file) && Nukko::isUnder($lib, $file)) { include_once $file; return; }
         }
-        $lib  = Nukko::config('LIB_DIR');
-        if (is_string($handler)) {
-            if (str_contains($handler, '@')) {
-                [$cls, $act] = explode('@', $handler, 2);
-                if (class_exists($cls)) {
-                    $obj = new $cls();
-                    if (is_callable([$obj, $act])) { $obj->$act(); return; }
-                }
-            }
-            $file = ($handler !== '' && $handler[0] !== '/')
-                ? $lib . '/' . ltrim($handler, '/')
-                : $handler;
-            if (is_string($file) && $file !== '' && is_file($file) && Nukko::isUnder($lib, $file)) {
-                include_once $file; return;
-            }
-        }
-
-        http_response_code(500);
+        http_response_code(404);
         header('Content-Type: text/plain; charset=UTF-8');
-        echo "500 Internal Server Error";
-        return;
+        echo "404 Not Found"; return;
 
     } else {
-        // ミラーinclude
+        // mirrorモード
         $script = $_SERVER['SCRIPT_FILENAME'] ?? '';
         $base   = realpath(Nukko::config('BASE_DIR') . '/public_html');
         $sReal  = $script ? realpath($script) : false;
