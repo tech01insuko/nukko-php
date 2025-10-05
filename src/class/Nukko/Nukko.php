@@ -1,5 +1,7 @@
 <?php
 namespace Nukko;
+use Random\RandomException;
+
 class Nukko
 {
     protected static array $config = [];
@@ -60,6 +62,11 @@ class Nukko
         return str_starts_with($path . '/', $base);
     }
 
+    /**
+     * CSRFトークンを取得
+     * @param string $key トークンのキー
+     * @return string トークン文字列
+     */
     public static function csrfToken(string $key = 'default'): string
     {
         if (PHP_SAPI !== 'cli' && session_status() !== PHP_SESSION_ACTIVE) {
@@ -74,6 +81,13 @@ class Nukko
         return $_SESSION['csrf'][$key];
     }
 
+    /**
+     * CSRFトークンを検証
+     * @param string|null $token トークン文字列
+     * @param string $key トークンのキー
+     * @param bool $rotate 検証成功時にトークンを破棄するかどうか
+     * @return bool 検証結果
+     */
     public static function csrfCheck(?string $token, string $key = 'default', bool $rotate = true): bool
     {
         if (session_status() !== PHP_SESSION_ACTIVE) return false;
