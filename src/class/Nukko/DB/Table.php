@@ -23,7 +23,6 @@ abstract class Table
         }
     }
 
-
     public function find(array $where = [], array $options = []): array
     {
         $params = [];
