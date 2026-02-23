@@ -114,15 +114,14 @@ class Dialect
 
     public function detectPrimaryKey(string $table): ?string
     {
-        if (!$this->isPgsql()) {
-            return null;
-        }
-
         if (isset($this->primaryKeyCache[$table])) {
             return $this->primaryKeyCache[$table];
         }
 
-        $sql = "
+        // PostgreSQL
+        if ($this->isPgsql()) {
+
+            $sql = "
             SELECT a.attname
             FROM pg_index i
             JOIN pg_attribute a
@@ -132,19 +131,48 @@ class Dialect
               AND i.indisprimary
         ";
 
-        $stmt = $this->pdo->query($sql);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $stmt = $this->pdo->query($sql);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if (count($rows) === 1) {
-            return $this->primaryKeyCache[$table] = $rows[0]['attname'];
+            if (count($rows) === 1) {
+                return $this->primaryKeyCache[$table] = $rows[0]['attname'];
+            }
+
+            if (count($rows) > 1) {
+                throw new \RuntimeException(
+                    "Composite primary key is not supported: {$table}"
+                );
+            }
+
+            return $this->primaryKeyCache[$table] = null;
         }
 
-        if (count($rows) > 1) {
-            throw new \RuntimeException(
-                "Composite primary key is not supported: {$table}"
+        // SQLite
+        if ($this->isSqlite()) {
+
+            $stmt = $this->pdo->query(
+                "PRAGMA table_info('$table')"
             );
+
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $pkCols = array_filter($rows, fn($r) => (int)$r['pk'] === 1);
+
+            if (count($pkCols) === 1) {
+                $pk = array_values($pkCols)[0]['name'];
+                return $this->primaryKeyCache[$table] = $pk;
+            }
+
+            if (count($pkCols) > 1) {
+                throw new \RuntimeException(
+                    "Composite primary key is not supported: {$table}"
+                );
+            }
+
+            return $this->primaryKeyCache[$table] = null;
         }
 
-        return $this->primaryKeyCache[$table] = null;
+        // MySQL / MariaDB
+        return null;
     }
 }
