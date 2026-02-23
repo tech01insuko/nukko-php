@@ -83,7 +83,7 @@ final class DB extends PDO
      * @param array|null $config
      * @return self
      */
-    public static function get(array $config = null): self
+    public static function get(?array $config = null): self
     {
         if (!is_array($config)) {
             throw new PDOException('DB::get() は配列接続のみを受け付けます（例: DB::get(Nukko::config("DB"))）');
@@ -100,10 +100,7 @@ final class DB extends PDO
     /** 共有インスタンスキャッシュを全てクリア（必要な場合だけ） */
     public static function flush(): void
     {
-        foreach (self::$instances as $k => $_) {
-            self::$instances[$k] = null; // PDO参照を切る
-            unset(self::$instances[$k]);
-        }
+        self::$instances = [];
     }
 
     // ---------------------------------------------------------------------
