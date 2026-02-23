@@ -27,20 +27,52 @@ abstract class Table
     {
         $params = [];
 
-        $sql = "SELECT * FROM {$this->table} ";
+        $sql = "SELECT * FROM {$this->table}";
 
-        $sql .= $this->buildWhere($where, $params);
+        // WHERE
+        $whereSql = $this->buildWhere($where, $params);
+        if ($whereSql !== '') {
+            $sql .= ' ' . $whereSql;
+        }
 
-        if (isset($options['order'])) {
+        // ORDER
+        if (!empty($options['order'])) {
             $sql .= ' ' . $this->buildOrder($options['order']);
+        }
+
+        // LIMIT
+        if (isset($options['limit'])) {
+
+            $limit = (int)$options['limit'];
+
+            if ($limit < 0) {
+                throw new \InvalidArgumentException(
+                    'Limit must be >= 0'
+                );
+            }
+
+            $sql .= " LIMIT {$limit}";
+        }
+
+        // OFFSET
+        if (isset($options['offset'])) {
+
+            $offset = (int)$options['offset'];
+
+            if ($offset < 0) {
+                throw new \InvalidArgumentException(
+                    'Offset must be >= 0'
+                );
+            }
+
+            $sql .= " OFFSET {$offset}";
         }
 
         $st = $this->db->prepare($sql);
         $st->execute($params);
 
-        return $st->fetchAll();
+        return $st->fetchAll(); // PDO::FETCH_ASSOC 固定
     }
-
     public function update(
         array $data,
         array $where,
