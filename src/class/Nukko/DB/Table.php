@@ -1,9 +1,11 @@
 <?php
 namespace Nukko\DB;
 
+use Nukko\DB\PDO;
+
 abstract class Table
 {
-    protected DB $db;
+    protected PDO $db;
     protected Dialect $dialect;
     protected string $table;
     protected array $columns = [];
